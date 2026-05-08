@@ -16,14 +16,14 @@ export function SettingsPanel({ apiKey, onSave, onClose }) {
         <div className="modal-body">
           <h2 className="modal-title">Paramètres</h2>
           <p className="settings-desc">
-            Pour afficher de vrais événements autour de vous, entrez votre clé API{' '}
-            <a href="https://developer.ticketmaster.com/products-and-docs/apis/getting-started/" target="_blank" rel="noopener noreferrer">
-              Ticketmaster Discovery
+            Pour afficher de vrais événements en France, entrez votre clé API{' '}
+            <a href="https://openagenda.com/settings" target="_blank" rel="noopener noreferrer">
+              OpenAgenda
             </a>{' '}
             (gratuite). Sans clé, l'application fonctionne en mode démo.
           </p>
           <form onSubmit={handleSubmit} className="settings-form">
-            <label htmlFor="apikey">Clé API Ticketmaster</label>
+            <label htmlFor="apikey">Clé API OpenAgenda</label>
             <input
               id="apikey"
               type="text"

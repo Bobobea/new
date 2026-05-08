@@ -12,7 +12,7 @@ export default function App() {
   const { position, loading: geoLoading, error: geoError, permission, request: requestGeo } = useGeolocation();
   const [category, setCategory] = useState('all');
   const [radius, setRadius] = useState(30);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('tm_api_key') ?? '');
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('oa_api_key') ?? '');
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [view, setView] = useState('list');
@@ -26,8 +26,8 @@ export default function App() {
 
   const handleSaveKey = (key) => {
     setApiKey(key);
-    if (key) localStorage.setItem('tm_api_key', key);
-    else localStorage.removeItem('tm_api_key');
+    if (key) localStorage.setItem('oa_api_key', key);
+    else localStorage.removeItem('oa_api_key');
   };
 
   const isDemo = !apiKey;

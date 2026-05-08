@@ -28,7 +28,7 @@ function formatPrice(min, max, currency) {
 
 export function EventCard({ event, onClick, highlight }) {
   const color = CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS.Autre;
-  const price = formatPrice(event.priceMin, event.priceMax, event.currency);
+  const price = event.conditions ?? formatPrice(event.priceMin, event.priceMax, event.currency);
 
   return (
     <div

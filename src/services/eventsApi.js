@@ -1,6 +1,18 @@
-const TICKETMASTER_BASE = 'https://app.ticketmaster.com/discovery/v2';
+const OPENAGENDA_BASE = 'https://api.openagenda.com/v2';
 
-const CATEGORY_MAP = {
+const MUSIC_KW = ['musique', 'concert', 'festival', 'jazz', 'rock', 'electro', 'classique', 'opéra', 'chanson', 'rap', 'hip-hop'];
+const SPORTS_KW = ['sport', 'course', 'marathon', 'tournoi', 'match', 'football', 'tennis', 'natation', 'cyclisme', 'randonnée', 'rugby'];
+const ARTS_KW = ['théâtre', 'exposition', 'danse', 'cinéma', 'art', 'spectacle', 'cirque', 'performance', 'musée', 'comédie'];
+const FAMILY_KW = ['famille', 'enfant', 'marché', 'fête', 'brocante', 'communauté', 'quartier', 'vide-grenier', 'atelier'];
+
+const CATEGORY_SEARCH = {
+  music: 'musique concert festival',
+  sports: 'sport course tournoi',
+  arts: 'théâtre exposition art danse',
+  family: 'famille marché fête enfant',
+};
+
+const CATEGORY_MAP_MOCK = {
   all: '',
   music: 'Music',
   sports: 'Sports',
@@ -8,45 +20,15 @@ const CATEGORY_MAP = {
   family: 'Family',
 };
 
-export async function fetchEvents({ lat, lng, radius = 30, category = 'all', apiKey }) {
-  if (!apiKey) return fetchMockEvents({ lat, lng, radius, category });
-
-  const params = new URLSearchParams({
-    apikey: apiKey,
-    latlong: `${lat},${lng}`,
-    radius,
-    unit: 'km',
-    size: 30,
-    sort: 'date,asc',
-  });
-
-  if (CATEGORY_MAP[category]) {
-    params.append('classificationName', CATEGORY_MAP[category]);
-  }
-
-  const res = await fetch(`${TICKETMASTER_BASE}/events.json?${params}`);
-  if (!res.ok) throw new Error(`Ticketmaster API error: ${res.status}`);
-
-  const data = await res.json();
-  const events = data._embedded?.events ?? [];
-
-  return events.map((e) => ({
-    id: e.id,
-    name: e.name,
-    date: e.dates?.start?.localDate,
-    time: e.dates?.start?.localTime,
-    venue: e._embedded?.venues?.[0]?.name ?? 'Lieu inconnu',
-    city: e._embedded?.venues?.[0]?.city?.name ?? '',
-    lat: parseFloat(e._embedded?.venues?.[0]?.location?.latitude),
-    lng: parseFloat(e._embedded?.venues?.[0]?.location?.longitude),
-    image: e.images?.find((i) => i.ratio === '16_9' && i.width > 500)?.url ?? e.images?.[0]?.url,
-    url: e.url,
-    category: e.classifications?.[0]?.segment?.name ?? 'Autre',
-    genre: e.classifications?.[0]?.genre?.name,
-    priceMin: e.priceRanges?.[0]?.min,
-    priceMax: e.priceRanges?.[0]?.max,
-    currency: e.priceRanges?.[0]?.currency,
-  }));
+function detectCategory(keywords) {
+  if (!keywords?.length) return 'Autre';
+  const kws = keywords.map((k) => k.toLowerCase());
+  const has = (list) => list.some((k) => kws.some((kw) => kw.includes(k)));
+  if (has(MUSIC_KW)) return 'Music';
+  if (has(SPORTS_KW)) return 'Sports';
+  if (has(ARTS_KW)) return 'Arts & Theatre';
+  if (has(FAMILY_KW)) return 'Family';
+  return 'Autre';
 }
 
 function haversineDistance(lat1, lng1, lat2, lng2) {
@@ -59,6 +41,74 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
       Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function mapOpenAgendaEvent(e, userLat, userLng) {
+  const timing = e.timings?.[0];
+  const dateObj = timing?.begin ? new Date(timing.begin) : null;
+  const keywords = e.keywords?.fr ?? e.keywords?.en ?? [];
+  const category = detectCategory(keywords);
+  const lat = e.location?.latitude ? parseFloat(e.location.latitude) : null;
+  const lng = e.location?.longitude ? parseFloat(e.location.longitude) : null;
+
+  let image = null;
+  if (e.image) {
+    if (typeof e.image === 'string') image = e.image;
+    else if (e.image.base && e.image.filename) image = `${e.image.base}${e.image.filename}`;
+    else if (e.image.sizes?.medium?.url) image = e.image.sizes.medium.url;
+  }
+
+  return {
+    id: String(e.uid),
+    name: e.title?.fr ?? e.title?.en ?? 'Événement sans titre',
+    date: dateObj ? dateObj.toISOString().split('T')[0] : null,
+    time: dateObj ? dateObj.toTimeString().slice(0, 8) : null,
+    venue: e.location?.name ?? 'Lieu inconnu',
+    city: e.location?.city ?? '',
+    lat,
+    lng,
+    image,
+    url: e.canonicalUrl ?? '#',
+    category,
+    genre: keywords[0] ?? null,
+    conditions: e.conditions?.fr ?? e.conditions?.en ?? null,
+    priceMin: null,
+    priceMax: null,
+    currency: 'EUR',
+    distance:
+      userLat && userLng && lat && lng
+        ? Math.round(haversineDistance(userLat, userLng, lat, lng) * 10) / 10
+        : null,
+  };
+}
+
+export async function fetchEvents({ lat, lng, radius = 30, category = 'all', apiKey }) {
+  if (!apiKey) return fetchMockEvents({ lat, lng, radius, category });
+
+  const params = new URLSearchParams({
+    key: apiKey,
+    size: 30,
+    sort: 'timings.asc',
+    'timings[gte]': new Date().toISOString(),
+    lang: 'fr',
+  });
+
+  if (lat && lng) {
+    params.append('latlon', `${lat},${lng}`);
+    params.append('radius', radius);
+  }
+
+  if (category !== 'all' && CATEGORY_SEARCH[category]) {
+    params.append('keyword', CATEGORY_SEARCH[category]);
+  }
+
+  const res = await fetch(`${OPENAGENDA_BASE}/events?${params}`);
+  if (!res.ok) throw new Error(`OpenAgenda API error: ${res.status}`);
+
+  const data = await res.json();
+  if (!data.success) throw new Error('Erreur de réponse OpenAgenda');
+
+  return (data.events ?? []).map((e) => mapOpenAgendaEvent(e, lat, lng));
 }
 
 function fetchMockEvents({ lat, lng, radius, category }) {
@@ -79,9 +129,7 @@ function fetchMockEvents({ lat, lng, radius, category }) {
       url: '#',
       category: 'Music',
       genre: 'Jazz',
-      priceMin: 25,
-      priceMax: 65,
-      currency: 'EUR',
+      conditions: '25€ – 65€',
     },
     {
       id: 'm2',
@@ -96,9 +144,7 @@ function fetchMockEvents({ lat, lng, radius, category }) {
       url: '#',
       category: 'Sports',
       genre: 'Football',
-      priceMin: 30,
-      priceMax: 150,
-      currency: 'EUR',
+      conditions: '30€ – 150€',
     },
     {
       id: 'm3',
@@ -112,10 +158,8 @@ function fetchMockEvents({ lat, lng, radius, category }) {
       image: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=400',
       url: '#',
       category: 'Family',
-      genre: 'Community',
-      priceMin: 0,
-      priceMax: 0,
-      currency: 'EUR',
+      genre: 'Marché',
+      conditions: 'Gratuit',
     },
     {
       id: 'm4',
@@ -129,10 +173,8 @@ function fetchMockEvents({ lat, lng, radius, category }) {
       image: 'https://images.unsplash.com/photo-1507924538820-ede94a04019d?w=400',
       url: '#',
       category: 'Arts & Theatre',
-      genre: 'Musical',
-      priceMin: 40,
-      priceMax: 120,
-      currency: 'EUR',
+      genre: 'Théâtre',
+      conditions: '40€ – 120€',
     },
     {
       id: 'm5',
@@ -146,10 +188,8 @@ function fetchMockEvents({ lat, lng, radius, category }) {
       image: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400',
       url: '#',
       category: 'Music',
-      genre: 'Electronic',
-      priceMin: 15,
-      priceMax: 30,
-      currency: 'EUR',
+      genre: 'Électro',
+      conditions: '15€ – 30€',
     },
     {
       id: 'm6',
@@ -164,9 +204,7 @@ function fetchMockEvents({ lat, lng, radius, category }) {
       url: '#',
       category: 'Sports',
       genre: 'Tennis',
-      priceMin: 20,
-      priceMax: 80,
-      currency: 'EUR',
+      conditions: '20€ – 80€',
     },
     {
       id: 'm7',
@@ -180,10 +218,8 @@ function fetchMockEvents({ lat, lng, radius, category }) {
       image: 'https://images.unsplash.com/photo-1536924940846-227afb31e2a5?w=400',
       url: '#',
       category: 'Arts & Theatre',
-      genre: 'Exhibition',
-      priceMin: 12,
-      priceMax: 18,
-      currency: 'EUR',
+      genre: 'Exposition',
+      conditions: '12€ – 18€',
     },
     {
       id: 'm8',
@@ -197,10 +233,8 @@ function fetchMockEvents({ lat, lng, radius, category }) {
       image: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=400',
       url: '#',
       category: 'Family',
-      genre: 'Community',
-      priceMin: 0,
-      priceMax: 0,
-      currency: 'EUR',
+      genre: 'Fête',
+      conditions: 'Gratuit',
     },
     {
       id: 'm9',
@@ -215,9 +249,7 @@ function fetchMockEvents({ lat, lng, radius, category }) {
       url: '#',
       category: 'Music',
       genre: 'Rock',
-      priceMin: 45,
-      priceMax: 90,
-      currency: 'EUR',
+      conditions: '45€ – 90€',
     },
     {
       id: 'm10',
@@ -231,22 +263,16 @@ function fetchMockEvents({ lat, lng, radius, category }) {
       image: 'https://images.unsplash.com/photo-1571008887538-b36bb32f4571?w=400',
       url: '#',
       category: 'Sports',
-      genre: 'Running',
-      priceMin: 35,
-      priceMax: 35,
-      currency: 'EUR',
+      genre: 'Course',
+      conditions: '35€',
     },
   ];
 
-  const categoryFilter = CATEGORY_MAP[category];
-  let filtered = categoryFilter
-    ? all.filter((e) => e.category === categoryFilter)
-    : all;
+  const categoryFilter = CATEGORY_MAP_MOCK[category];
+  let filtered = categoryFilter ? all.filter((e) => e.category === categoryFilter) : all;
 
   if (lat && lng) {
-    filtered = filtered.filter(
-      (e) => haversineDistance(lat, lng, e.lat, e.lng) <= radius
-    );
+    filtered = filtered.filter((e) => haversineDistance(lat, lng, e.lat, e.lng) <= radius);
   }
 
   return filtered.map((e) => ({
