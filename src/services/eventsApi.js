@@ -1,4 +1,4 @@
-const OPENAGENDA_BASE = 'https://api.openagenda.com/v2';
+const OPENAGENDA_BASE = import.meta.env.DEV ? '/api/openagenda' : 'https://api.openagenda.com/v2';
 
 const MUSIC_KW = ['musique', 'concert', 'festival', 'jazz', 'rock', 'electro', 'classique', 'opéra', 'chanson', 'rap', 'hip-hop'];
 const SPORTS_KW = ['sport', 'course', 'marathon', 'tournoi', 'match', 'football', 'tennis', 'natation', 'cyclisme', 'randonnée', 'rugby'];
